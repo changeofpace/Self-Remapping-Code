@@ -21,7 +21,13 @@ Address           Size               Info                                    Con
 000000013FDB1000  0000000000003000    ".pdata", ".rsrc", ".reloc"            Exception information        IMG    -R---    ERWC-
 </pre>
 
-The process begins by copying its image to a dynamically allocated memory region with PAGE\_EXECUTE\_READWRITE protection. The address of the remapping function, RemapSelfImage, is located in the copied image region then executed. RemapSelfImage creates a page-file-backed section to store the remapped view. A full view of this section is mapped with PAGE\_READWRITE protection. The image is written to physical memory by copying the original image to this view. The original image is unmapped and reconstructed by mapping aligned views of the section for the image's PE Sections. Each of these views is mapped with the undocumented allocation type: **SEC\_NO\_CHANGE** (0x00400000). This value causes future attempts to change the protection of pages in these views to fail with status code **STATUS\_INVALID\_PAGE\_PROTECTION** (0xC0000045). Finally, the copy view is unmapped and execution continues in the remapped image's memory region.
+- The process begins by copying its image to a dynamically allocated memory region with PAGE\_EXECUTE\_READWRITE protection. The address of the remapping function, RemapSelfImage, is located in the copied image region then executed.
+
+- RemapSelfImage creates a page-file-backed section to store the remapped view. A full view of this section is mapped with PAGE\_READWRITE protection. The image is written to physical memory by copying the original image to this view. The original image is unmapped and reconstructed by mapping aligned views of the section for the image's PE Sections.
+
+- Each of these views is mapped with the undocumented allocation type: **SEC\_NO\_CHANGE** (0x00400000). This value causes future attempts to change the protection of pages in these views to fail with status code **STATUS\_INVALID\_PAGE\_PROTECTION** (0xC0000045).
+
+- Finally, the copy view is unmapped and execution continues in the remapped image's memory region.
 
 The remapped image's layout:
 
