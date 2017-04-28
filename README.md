@@ -40,7 +40,7 @@ Address           Size               Info                                    Con
 
 ## Issues
 
-- Each view must be aligned to the system allocation granularity (64kB / 0x10000 bytes on Windows 7). This program overcomes this issue by padding .text and .rdata with filler code / constant data.
+- Each view must be aligned to the system allocation granularity (64K or 0x10000 bytes on Windows 7). This program overcomes this issue by padding .text and .rdata with filler code / constant data.
 
 ## Notes
 
