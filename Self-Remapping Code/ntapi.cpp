@@ -38,7 +38,6 @@ ntapi::NtMapViewOfSection(
     _In_        ULONG           AllocationType,
     _In_        ULONG           Win32Protect)
 {
-    typedef NTSTATUS(NTAPI* NtMapViewOfSection_t)(HANDLE, HANDLE, PVOID*, ULONG_PTR, SIZE_T, PLARGE_INTEGER, PSIZE_T, SECTION_INHERIT, ULONG, ULONG);
     static NtMapViewOfSection_t Fn = NtMapViewOfSection_t(GetProcAddress(hmNtdll, "NtMapViewOfSection"));
     if (Fn)
         return Fn(SectionHandle, ProcessHandle, BaseAddress, ZeroBits, CommitSize, SectionOffset, ViewSize, InheritDisposition, AllocationType, Win32Protect);
@@ -52,7 +51,6 @@ ntapi::NtUnmapViewOfSection(
     _In_     HANDLE ProcessHandle,
     _In_opt_ PVOID  BaseAddress)
 {
-    typedef NTSTATUS(NTAPI* NtUnmapViewOfSection_t)(HANDLE, PVOID);
     static NtUnmapViewOfSection_t Fn = NtUnmapViewOfSection_t(GetProcAddress(hmNtdll, "NtUnmapViewOfSection"));
     if (Fn)
         return Fn(ProcessHandle, BaseAddress);

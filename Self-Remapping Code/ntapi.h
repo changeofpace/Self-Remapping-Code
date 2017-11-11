@@ -66,6 +66,9 @@ NtCreateSection(
     _In_opt_ HANDLE             FileHandle
 );
 
+
+typedef NTSTATUS(NTAPI* NtMapViewOfSection_t)(HANDLE, HANDLE, PVOID*, ULONG_PTR, SIZE_T, PLARGE_INTEGER, PSIZE_T, SECTION_INHERIT, ULONG, ULONG);
+
 NTSTATUS
 NTAPI
 NtMapViewOfSection(
@@ -80,6 +83,8 @@ NtMapViewOfSection(
     _In_        ULONG           AllocationType,
     _In_        ULONG           Win32Protect
 );
+
+typedef NTSTATUS(NTAPI* NtUnmapViewOfSection_t)(HANDLE, PVOID);
 
 NTSTATUS
 NTAPI

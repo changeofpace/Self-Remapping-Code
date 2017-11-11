@@ -5,6 +5,8 @@
 #include "pe_header.h"
 #include "ntapi.h"
 
+#define NtCurrentProcess		((HANDLE)(LONG_PTR)-1)
+
 void remap::RemapSelfImage(const PVOID RegionBase)
 {
     PE_HEADER pe;
@@ -33,7 +35,7 @@ void remap::RemapSelfImage(const PVOID RegionBase)
     LARGE_INTEGER copySectionOffset = {};
     SIZE_T copyViewSize = 0;
     status = ntapi::NtMapViewOfSection(hRemapSection,
-                                       GetCurrentProcess(),
+                                       NtCurrentProcess,
                                        &copyViewBase,
                                        0,
                                        pe.optionalHeader->SizeOfImage,
@@ -51,8 +53,23 @@ void remap::RemapSelfImage(const PVOID RegionBase)
     // Write the image to the physical memory represented by the remap section.
     memcpy(copyViewBase, PVOID(pe.optionalHeader->ImageBase), pe.optionalHeader->SizeOfImage);
 
+    const PIMAGE_SECTION_HEADER text = GetPeSectionByName(pe, ".text");
+    const PIMAGE_SECTION_HEADER rdata = GetPeSectionByName(pe, ".rdata");
+    const PIMAGE_SECTION_HEADER data = GetPeSectionByName(pe, ".data");
+    if (!(text && text < rdata && rdata < data))
+        return;
+
+    // Prepare functions before unmapping otherwise it breaks on 32-bit because of non RIP-relative instructions like in 64-bit.
+    HMODULE hmNtdll = GetModuleHandleA("ntdll.dll");
+    ntapi::NtUnmapViewOfSection_t unmapFn = ntapi::NtUnmapViewOfSection_t(GetProcAddress(hmNtdll, "NtUnmapViewOfSection"));
+    ntapi::NtMapViewOfSection_t mapFn = ntapi::NtMapViewOfSection_t(GetProcAddress(hmNtdll, "NtMapViewOfSection"));
+    void *closeHandleFn = &CloseHandle;
+
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+
     // Unmap the image.
-    status = ntapi::NtUnmapViewOfSection(GetCurrentProcess(), PVOID(pe.optionalHeader->ImageBase));
+    status = unmapFn(NtCurrentProcess, PVOID(pe.optionalHeader->ImageBase));
     if (status != ntapi::STATUS_SUCCESS)
     {
         printf("NtUnmapViewOfSection failed for image:  0x%08X.\n", status);
@@ -63,41 +80,8 @@ void remap::RemapSelfImage(const PVOID RegionBase)
     // Each view represents one or more PE Sections (including the PE Header).
     // ntapi::SEC_NO_CHANGE causes future attempts to change the protection of pages in these views to 
     // fail with status code STATUS_INVALID_PAGE_PROTECTION.
-    auto mapPeSection = [&hRemapSection](SIZE_T BaseAddress,
-                                         SIZE_T RegionSize,
-                                         SIZE_T RegionOffset,
-                                         DWORD Protection)
-    {
-        PVOID viewBase = PVOID(BaseAddress);
-        LARGE_INTEGER sectionOffset = {};
-        sectionOffset.QuadPart = RegionOffset;
-        SIZE_T viewSize = RegionSize;
-        ntapi::NTSTATUS status = ntapi::NtMapViewOfSection(hRemapSection,
-                                                           GetCurrentProcess(),
-                                                           &viewBase,
-                                                           0,
-                                                           viewSize,
-                                                           &sectionOffset,
-                                                           &viewSize,
-                                                           ntapi::ViewUnmap,
-                                                           ntapi::SEC_NO_CHANGE,
-                                                           Protection);
-        if (status != ntapi::STATUS_SUCCESS)
-            printf("NtMapViewOfSection failed for view at base %p:  0x%08X.\n", BaseAddress, status);
-        else 
-            printf("remapped   %p  +%016X  %16X\n",
-                    viewBase,
-                    sectionOffset.QuadPart,
-                    viewSize);
-    };
 
-    const PIMAGE_SECTION_HEADER text = GetPeSectionByName(pe, ".text");
-    const PIMAGE_SECTION_HEADER rdata = GetPeSectionByName(pe, ".rdata");
-    const PIMAGE_SECTION_HEADER data = GetPeSectionByName(pe, ".data");
-    if (!(text && text < rdata && rdata < data))
-        return;
-
-    // Mapped views for the PE Sections.
+    // Mapped views for the PE Sections, if they are aligned.
     // ========================================================================
     // Address Range (RVA)      Content                         Protection
     // ------------------------------------------------------------------------
@@ -105,29 +89,38 @@ void remap::RemapSelfImage(const PVOID RegionBase)
     // 0x100000 - 0x2FFFFF      .rdata                          PAGE_READONLY
     // 0x200000 - 0x203FFF      .data, .pdata, .rsrc, .reloc    PAGE_READWRITE
     // ------------------------------------------------------------------------
-    mapPeSection(pe.optionalHeader->ImageBase,
-                 PE_HEADER_SIZE + text->Misc.VirtualSize,
-                 0,
-                 PAGE_EXECUTE_READ);
+    PVOID viewBase = PVOID(pe.optionalHeader->ImageBase);
+    LARGE_INTEGER sectionOffset = {};
+    sectionOffset.QuadPart = 0;
+    SIZE_T viewSize = rdata->VirtualAddress;
+    while (viewSize % si.dwAllocationGranularity != 0) {
+        viewSize++;
+    }
+    status = mapFn(hRemapSection, NtCurrentProcess, &viewBase, 0, 0, &sectionOffset, &viewSize, ntapi::ViewUnmap, ntapi::SEC_NO_CHANGE, PAGE_EXECUTE_READ);
+    PVOID initialBase = viewBase;
 
-    mapPeSection(pe.optionalHeader->ImageBase + rdata->VirtualAddress,
-                 rdata->Misc.VirtualSize,
-                 rdata->VirtualAddress,
-                 PAGE_READONLY);
+    viewBase = PVOID((UINT_PTR)viewBase + viewSize);
+    sectionOffset.QuadPart += viewSize;
+    viewSize = data->VirtualAddress - viewSize;
+    while (viewSize % si.dwAllocationGranularity != 0) {
+        viewSize--;
+    }
+    status = mapFn(hRemapSection, NtCurrentProcess, &viewBase, 0, 0, &sectionOffset, &viewSize, ntapi::ViewUnmap, ntapi::SEC_NO_CHANGE, PAGE_READONLY);
 
-    mapPeSection(pe.optionalHeader->ImageBase + data->VirtualAddress,
-                 0,
-                 data->VirtualAddress,
-                 PAGE_READWRITE);
+    viewBase = PVOID((UINT_PTR)viewBase + viewSize);
+    sectionOffset.QuadPart += viewSize;
+    viewSize = 0;
+    status = mapFn(hRemapSection, NtCurrentProcess, &viewBase, 0, 0, &sectionOffset, &viewSize, ntapi::ViewUnmap, ntapi::SEC_NO_CHANGE, PAGE_READWRITE);
 
     // Unmap the copy view.
-    status = ntapi::NtUnmapViewOfSection(GetCurrentProcess(), copyViewBase);
+    status = unmapFn(NtCurrentProcess, copyViewBase);
     if (status != ntapi::STATUS_SUCCESS)
     {
         printf("NtUnmapViewOfSection failed 0x%08X.\n", status);
         return;
     }
 
-    if (!CloseHandle(hRemapSection))
+    // Might need to call GetProcAddress for this one as well.
+    if (!reinterpret_cast<BOOL(WINAPI*)(HANDLE)>(closeHandleFn)(hRemapSection))
         printf("CloseHandle failed %d.\n", GetLastError());
 }
