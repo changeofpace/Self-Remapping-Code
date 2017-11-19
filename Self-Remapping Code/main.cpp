@@ -4,7 +4,7 @@
 #include <array>
 
 #include "filler.h"
-#include "ntapi.h"
+#include "ntdll.h"
 #include "pe_header.h"
 #include "remap.h"
 
@@ -24,16 +24,20 @@ static bool ValidateSectionAlignment(const PVOID ImageBase)
 
     auto printSectionSummary = [&ImageBase](const PIMAGE_SECTION_HEADER Section)
     {
-        printf("%-8.8s   %p  +%016X  %16X\n",
+        printf("%-8.8s \t %IX \t %X \t %X\n",
                Section->Name,
                SIZE_T(ImageBase) + Section->VirtualAddress,
-               Section->VirtualAddress,
-               Section->Misc.VirtualSize);
+               Section->Misc.VirtualSize,
+               Section->VirtualAddress);
     };
 
+    printf("=================================================================\n");
+    printf("Section       Base Address       Size    Rva\n");
+    printf("-----------------------------------------------------------------\n");
     printSectionSummary(text);
     printSectionSummary(rdata);
     printSectionSummary(data);
+    printf("=================================================================\n");
 
     SYSTEM_INFO si;
     GetSystemInfo(&si);
@@ -65,17 +69,17 @@ static void TestVirtualProtect(const PVOID ImageBase)
         PVOID regionBase = PVOID(BaseAddress);
         SIZE_T regionSize = RegionSize;
         DWORD oldProtection = 0;
-        ntapi::NTSTATUS status = ntapi::NtProtectVirtualMemory(GetCurrentProcess(),
-                                                               &regionBase,
-                                                               &regionSize,
-                                                               NewProtection,
-                                                               &oldProtection);
-        if (status != ntapi::STATUS_INVALID_PAGE_PROTECTION &&
+        NTSTATUS status = NtProtectVirtualMemory(GetCurrentProcess(),
+                                                 &regionBase,
+                                                 &regionSize,
+                                                 NewProtection,
+                                                 &oldProtection);
+        if (status != STATUS_INVALID_PAGE_PROTECTION &&
             NewProtection != oldProtection)
-                printf("Unexpected NtProtectVirtualMemory status for %p (%X):  0x%08X\n",
-                       BaseAddress,
-                       NewProtection,
-                       status);
+        {
+            printf("Unexpected NtProtectVirtualMemory status for %p (%X):  0x%08X\n",
+                   BaseAddress, NewProtection, status);
+        }
     };
 
     const std::array<DWORD, 12> protectionValues =
@@ -114,23 +118,25 @@ int main(int argc, char* argv[])
     if (ValidateSectionAlignment(imagebase))
     {
         const DWORD imageSize = GetSizeOfImage(imagebase);
-        
+
         // Allocate an executable / writable memory region where the remapping code will execute.
         if (PVOID remapperRegion = VirtualAlloc(NULL, imageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE))
         {
             // Copy SelfRemappingCode.exe's image to this region.
             memcpy(remapperRegion, imagebase, imageSize);
-            
+
             // Calculate remap::RemapSelfImage's VA in this region.
             typedef void(*Remap_t)(PVOID);
             Remap_t Remap = Remap_t(SIZE_T(remapperRegion) + SIZE_T(remap::RemapSelfImage) - SIZE_T(imagebase));
-           
+
             // Process execution continues in the new region.
             Remap(remapperRegion);
             // Process execution returns to the original (remapped) region.
-            
+
             VirtualFree(remapperRegion, 0, MEM_RELEASE);
+
             TestVirtualProtect(imagebase);
+
             for (;;)
             {
                 printf("Zzz...\n");
@@ -138,10 +144,14 @@ int main(int argc, char* argv[])
             }
         }
         else
+        {
             printf("VirtualAlloc failed for remapper region:  %d.\n", GetLastError());
+        }
     }
     else
+    {
         printf("Error: .rdata or .data are not aligned to system allocation granularity.\n");
+    }
 
     // Force-include filler code / data.
     if (SIZE_T(imagebase) == 1) { filler::text(); const double zxcv = filler::rdata[3]; }

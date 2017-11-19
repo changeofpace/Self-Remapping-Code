@@ -27,21 +27,18 @@
     <ClCompile Include="pe_header.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ntapi.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="filler.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ntapi.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="remap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="pe_header.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ntdll.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

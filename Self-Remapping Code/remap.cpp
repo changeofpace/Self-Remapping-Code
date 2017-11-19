@@ -2,8 +2,8 @@
 
 #include <stdio.h>
 
+#include "ntdll.h"
 #include "pe_header.h"
-#include "ntapi.h"
 
 void remap::RemapSelfImage(const PVOID RegionBase)
 {
@@ -15,14 +15,14 @@ void remap::RemapSelfImage(const PVOID RegionBase)
     HANDLE hRemapSection = NULL;
     LARGE_INTEGER sectionMaxSize = {};
     sectionMaxSize.QuadPart = pe.optionalHeader->SizeOfImage;
-    ntapi::NTSTATUS status = ntapi::NtCreateSection(&hRemapSection,
-                                                    SECTION_ALL_ACCESS,
-                                                    NULL,
-                                                    &sectionMaxSize,
-                                                    PAGE_EXECUTE_READWRITE,
-                                                    SEC_COMMIT | ntapi::SEC_NO_CHANGE,
-                                                    NULL);
-    if (status != ntapi::STATUS_SUCCESS)
+    NTSTATUS status = NtCreateSection(&hRemapSection,
+                                      SECTION_ALL_ACCESS,
+                                      NULL,
+                                      &sectionMaxSize,
+                                      PAGE_EXECUTE_READWRITE,
+                                      SEC_COMMIT | SEC_NO_CHANGE,
+                                      NULL);
+    if (!NT_SUCCESS(status))
     {
         printf("NtCreateSection failed:  0x%08X.\n", status);
         return;
@@ -32,17 +32,17 @@ void remap::RemapSelfImage(const PVOID RegionBase)
     PVOID copyViewBase = NULL;
     LARGE_INTEGER copySectionOffset = {};
     SIZE_T copyViewSize = 0;
-    status = ntapi::NtMapViewOfSection(hRemapSection,
-                                       GetCurrentProcess(),
-                                       &copyViewBase,
-                                       0,
-                                       pe.optionalHeader->SizeOfImage,
-                                       &copySectionOffset,
-                                       &copyViewSize,
-                                       ntapi::ViewUnmap,
-                                       0,
-                                       PAGE_READWRITE);
-    if (status != ntapi::STATUS_SUCCESS)
+    status = NtMapViewOfSection(hRemapSection,
+                                GetCurrentProcess(),
+                                &copyViewBase,
+                                0,
+                                pe.optionalHeader->SizeOfImage,
+                                &copySectionOffset,
+                                &copyViewSize,
+                                ViewUnmap,
+                                0,
+                                PAGE_READWRITE);
+    if (!NT_SUCCESS(status))
     {
         printf("NtMapViewOfSection failed for copy view:  0x%08X.\n", status);
         return;
@@ -52,8 +52,8 @@ void remap::RemapSelfImage(const PVOID RegionBase)
     memcpy(copyViewBase, PVOID(pe.optionalHeader->ImageBase), pe.optionalHeader->SizeOfImage);
 
     // Unmap the image.
-    status = ntapi::NtUnmapViewOfSection(GetCurrentProcess(), PVOID(pe.optionalHeader->ImageBase));
-    if (status != ntapi::STATUS_SUCCESS)
+    status = NtUnmapViewOfSection(GetCurrentProcess(), PVOID(pe.optionalHeader->ImageBase));
+    if (!NT_SUCCESS(status))
     {
         printf("NtUnmapViewOfSection failed for image:  0x%08X.\n", status);
         return;
@@ -61,7 +61,7 @@ void remap::RemapSelfImage(const PVOID RegionBase)
 
     // Reconstruct the image by mapping aligned views of the remap section for the image's PE Sections.
     // Each view represents one or more PE Sections (including the PE Header).
-    // ntapi::SEC_NO_CHANGE causes future attempts to change the protection of pages in these views to 
+    // SEC_NO_CHANGE causes future attempts to change the protection of pages in these views to
     // fail with status code STATUS_INVALID_PAGE_PROTECTION.
     auto mapPeSection = [&hRemapSection](SIZE_T BaseAddress,
                                          SIZE_T RegionSize,
@@ -72,23 +72,20 @@ void remap::RemapSelfImage(const PVOID RegionBase)
         LARGE_INTEGER sectionOffset = {};
         sectionOffset.QuadPart = RegionOffset;
         SIZE_T viewSize = RegionSize;
-        ntapi::NTSTATUS status = ntapi::NtMapViewOfSection(hRemapSection,
-                                                           GetCurrentProcess(),
-                                                           &viewBase,
-                                                           0,
-                                                           viewSize,
-                                                           &sectionOffset,
-                                                           &viewSize,
-                                                           ntapi::ViewUnmap,
-                                                           ntapi::SEC_NO_CHANGE,
-                                                           Protection);
-        if (status != ntapi::STATUS_SUCCESS)
+        NTSTATUS status = NtMapViewOfSection(hRemapSection,
+                                             GetCurrentProcess(),
+                                             &viewBase,
+                                             0,
+                                             viewSize,
+                                             &sectionOffset,
+                                             &viewSize,
+                                             ViewUnmap,
+                                             SEC_NO_CHANGE,
+                                             Protection);
+        if (!NT_SUCCESS(status))
             printf("NtMapViewOfSection failed for view at base %p:  0x%08X.\n", BaseAddress, status);
-        else 
-            printf("remapped   %p  +%016X  %16X\n",
-                    viewBase,
-                    sectionOffset.QuadPart,
-                    viewSize);
+        else
+            printf("remapped \t %IX \t %IX \t %llX\n", viewBase, viewSize, sectionOffset.QuadPart);
     };
 
     const PIMAGE_SECTION_HEADER text = GetPeSectionByName(pe, ".text");
@@ -121,8 +118,8 @@ void remap::RemapSelfImage(const PVOID RegionBase)
                  PAGE_READWRITE);
 
     // Unmap the copy view.
-    status = ntapi::NtUnmapViewOfSection(GetCurrentProcess(), copyViewBase);
-    if (status != ntapi::STATUS_SUCCESS)
+    status = NtUnmapViewOfSection(GetCurrentProcess(), copyViewBase);
+    if (!NT_SUCCESS(status))
     {
         printf("NtUnmapViewOfSection failed 0x%08X.\n", status);
         return;

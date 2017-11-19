@@ -5,9 +5,7 @@
 #include <array>
 #include <vector>
 
-#define PAGE_SIZE               0x1000
-#define PAGE_ALIGN(Va)          ((PVOID)((ULONG_PTR)(Va) & ~(PAGE_SIZE - 1)))
-#define ROUND_TO_PAGES(Size)    (((ULONG_PTR)(Size) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))
+#include "ntdll.h"
 
 #define PE_HEADER_SIZE          0x1000
 

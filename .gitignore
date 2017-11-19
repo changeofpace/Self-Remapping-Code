@@ -19,4 +19,5 @@
 .vs/*
 Debug/*
 Release/*
+bin/
 ipch/*
