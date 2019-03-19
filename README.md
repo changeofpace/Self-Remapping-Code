@@ -66,4 +66,4 @@ Address          Size             Info                          Type   Protect  
 
 ## Requirements
 
-- Each pe section in the image must be aligned to the system allocation granularity. This program uses the `/ALIGN` linker option achieve this alignment.
+- Each pe section in the image must be aligned to the system allocation granularity. This program uses the `/ALIGN` linker option to achieve this alignment.
