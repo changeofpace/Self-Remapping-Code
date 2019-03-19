@@ -2,47 +2,68 @@
 
 ## Summary
 
-This program remaps its image to prevent its .text and .rdata PE sections from being made writable via NtProtectVirtualMemory.
+This program remaps its image to prevent the page protection of pages contained in the image from being modified via NtProtectVirtualMemory.
 
 ## Motivation
 
-Processes can utilize this technique as an anti-debugging / anti-hacking mechanism to prevent third-party processes and injected code from patching the image.
+This technique can be utilized as an anti-debugging and anti-dumping mechanism.
 
 ## Implementation
 
-Image, in this context, refers to the memory mapped view of the image section for the executing process:
+The remapping technique uses the following strategy:
+
+1. The image is copied to an executable buffer referred to as the 'remap
+    region'.
+
+2. The remap routine inside the remap region is located and invoked.
+
+3. The remap routine creates a page-file-backed section to store the
+    remapped image.
+
+4. The remap routine maps a view of the entire section and copies the
+    contents of the image to the view. This view is then unmapped.
+
+5. The remap routine maps a view for each pe section in the image using the
+    relative virtual address of the pe section as the section offset for
+    the view. Each view is mapped using the 'SEC_NO_CHANGE' allocation
+    type to prevent page protection changes.
+
+6. The remap routine completes and execution returns to the remapped image.
+
+The following tables are examples of the memory layout of an image before and after it has been remapped using this technique:
+
+##### Before
 
 <pre>
-Address           Size               Info                                    Content                      Type   Protect  Initial
-000000013FD90000  0000000000001000   selfremappingcode.exe                                                IMG    -R---    ERWC-
-000000013FD91000  000000000000F000    ".text"                                Executable code              IMG    ER---    ERWC-
-000000013FDA0000  0000000000010000    ".rdata"                               Read-only initialized data   IMG    -R---    ERWC-
-000000013FDB0000  0000000000001000    ".data"                                Initialized data             IMG    -RW--    ERWC-
-000000013FDB1000  0000000000003000    ".pdata", ".rsrc", ".reloc"            Exception information        IMG    -R---    ERWC-
+Address          Size             Info                          Type   Protect  Initial
+=======================================================================================
+0000000140000000 0000000000001000 selfremappingcode.exe         IMG    -R---    ERWC-
+0000000140001000 000000000000F000 Reserved (0000000140000000)   IMG             ERWC-
+0000000140010000 0000000000002000  ".text"                      IMG    ER---    ERWC-
+0000000140012000 000000000000E000 Reserved (0000000140000000)   IMG             ERWC-
+0000000140020000 0000000000002000  ".rdata"                     IMG    -R---    ERWC-
+0000000140022000 000000000000E000 Reserved (0000000140000000)   IMG             ERWC-
+0000000140030000 0000000000001000  ".data"                      IMG    -RW--    ERWC-
+0000000140031000 000000000000F000 Reserved (0000000140000000)   IMG             ERWC-
+0000000140040000 0000000000001000  ".pdata"                     IMG    -R---    ERWC-
+0000000140041000 000000000000F000 Reserved (0000000140000000)   IMG             ERWC-
+0000000140050000 0000000000001000  ".rsrc"                      IMG    -R---    ERWC-
+0000000140051000 000000000000F000 Reserved (0000000140000000)   IMG             ERWC-
 </pre>
 
-- The process begins by copying its image to a dynamically allocated memory region with PAGE\_EXECUTE\_READWRITE protection. The address of the remapping function, RemapSelfImage, is located in the copied image region then executed.
-
-- RemapSelfImage creates a page-file-backed section to store the remapped view. A full view of this section is mapped with PAGE\_READWRITE protection. The image is written to physical memory by copying the original image to this view. The original image is unmapped and reconstructed by mapping aligned views of the section for the image's PE Sections.
-
-- Each of these views is mapped with the undocumented allocation type: **SEC\_NO\_CHANGE** (0x00400000). This value causes future attempts to change the protection of pages in these views to fail with status code **STATUS\_INVALID\_PAGE\_PROTECTION** (0xC0000045).
-
-- Finally, the copy view is unmapped and execution continues in the remapped image's memory region.
-
-The remapped image's layout:
+##### After
 
 <pre>
-Address           Size               Info                                    Content                      Type   Protect  Initial
-000000013FD90000  0000000000010000    ".text"                                Executable code              MAP    ER---    ER---
-000000013FDA0000  0000000000010000    ".rdata"                               Read-only initialized data   MAP    -R---    -R---
-000000013FDB0000  0000000000004000    ".data", ".pdata", ".rsrc", ".reloc"   Initialized data             MAP    -RW--    -RW--
+Address          Size             Info                          Type   Protect  Initial
+=======================================================================================
+0000000140000000 0000000000001000                               MAP    -R---    -R---
+0000000140010000 0000000000002000                               MAP    ER---    ER---
+0000000140020000 0000000000002000                               MAP    -R---    -R---
+0000000140030000 0000000000001000                               MAP    -RW--    -RW--
+0000000140040000 0000000000001000                               MAP    -R---    -R---
+0000000140050000 0000000000001000                               MAP    -R---    -R---
 </pre>
 
-## Issues
+## Requirements
 
-- Each view must be aligned to the system allocation granularity (64K or 0x10000 bytes on Windows 7). This program overcomes this issue by padding .text and .rdata with filler code / constant data.
-
-## Notes
-
-- Developed / tested on Windows 7 SP1 x64.
-- Code optimization is disabled to force filler code to be included.
+- Each pe section in the image must be aligned to the system allocation granularity. This program uses the `/ALIGN` linker option achieve this alignment.

@@ -2,28 +2,25 @@
 
 #include <Windows.h>
 
-typedef long NTSTATUS;
+#ifndef _NTDEF_
+typedef _Return_type_success_(return >= 0) LONG NTSTATUS;
+#endif
 
-#pragma region macros
 
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 
-// NTSTATUS codes
+#define STATUS_SUCCESS                   ((NTSTATUS)0x00000000L)
 #define STATUS_INVALID_PAGE_PROTECTION   ((NTSTATUS)0xC0000045L)
 #define STATUS_PROCEDURE_NOT_FOUND       ((NTSTATUS)0xC000007AL)
 
-// Flags
 #define SEC_NO_CHANGE 0x00400000
 
-// Page utils
-#define PAGE_SIZE               0x1000
-#define PAGE_ALIGN(Va)          ((PVOID)((ULONG_PTR)(Va) & ~(PAGE_SIZE - 1)))
-#define ROUND_TO_PAGES(Size)    (((ULONG_PTR)(Size) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))
+#define PAGE_SIZE 0x1000
+#define POINTER_IS_ALIGNED(Pointer, Alignment) \
+    (((((ULONG_PTR)(Pointer)) & (((Alignment)-1))) == 0) ? TRUE : FALSE)
 
-#pragma endregion macros
+#define NtCurrentProcess()  ((HANDLE)(LONG_PTR)-1)
 
-
-#pragma region types
 
 typedef struct _UNICODE_STRING
 {
@@ -53,10 +50,6 @@ typedef enum _MEMORY_INFORMATION_CLASS
     MemoryBasicInformation
 } MEMORY_INFORMATION_CLASS, *PMEMORY_INFORMATION_CLASS;
 
-#pragma endregion types
-
-
-#pragma region prototypes
 
 EXTERN_C
 NTSTATUS
@@ -98,12 +91,13 @@ NtUnmapViewOfSection(
 EXTERN_C
 NTSTATUS
 NTAPI
-NtProtectVirtualMemory(
-    _In_    HANDLE  ProcessHandle,
-    _Inout_ PVOID*  BaseAddress,
-    _Inout_ PSIZE_T RegionSize,
-    _In_    ULONG   NewProtection,
-    _Out_   PULONG  OldProtection
+NtClose(
+    _In_ HANDLE Handle
 );
 
-#pragma endregion prototypes
+EXTERN_C
+PIMAGE_NT_HEADERS
+NTAPI
+RtlImageNtHeader(
+    _In_ PVOID BaseAddress
+);
